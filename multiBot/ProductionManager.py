@@ -36,7 +36,7 @@ class ProductionManager:
     def update_projects(self):
         for f in self.factories:
             loc = HashableMapLocation(f.location.map_location())
-            if loc in self.projects:
+            if f.structure_is_built() and loc in self.projects:
                 self.projects.pop(loc)
 
     def update_units(self):
