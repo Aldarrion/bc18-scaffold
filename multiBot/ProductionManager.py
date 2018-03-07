@@ -18,7 +18,7 @@ class ProductionManager:
 
     def available_karbonite(self):
         return self.gc.karbonite() - reduce(
-            lambda x, y: x + (y.karbonite if y.is_in_progress else 0),
+            lambda x, y: x + (0 if y.is_in_progress else y.karbonite),
             self.projects.values(),
             0
         )
@@ -88,15 +88,17 @@ class ProductionManager:
                 print('Worker is close enough')
                 # Worker is close enough and can build
                 if project.is_in_progress:
-                    building = self.gc.sense_nearby_units(p_loc.map_location, 1)
-                    if self.gc.can_build(worker.id, building.id):
-                        self.gc.build(worker.id, building.id)
+                    units = self.gc.sense_nearby_units(p_loc.map_location, 1)
+                    for building in units:
+                        if self.gc.can_build(worker.id, building.id):
+                            self.gc.build(worker.id, building.id)
+                            break
                 else:
                     d = worker_loc.direction_to(p_loc.map_location)
                     if (self.gc.karbonite() > bc.UnitType.Factory.blueprint_cost()
                             and self.gc.can_blueprint(worker.id, bc.UnitType.Factory, d)):
                         self.gc.blueprint(worker.id, bc.UnitType.Factory, d)
-                        self.projects[p_loc] = Project(project.karbonite, False)
+                        self.projects[p_loc] = Project(project.karbonite, True)
             else:
                 # Worker is too far, move it closer
                 print('Worker is too far')
