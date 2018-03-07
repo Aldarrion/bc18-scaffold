@@ -5,4 +5,4 @@ viewer_currentInstall.json
 /battlecode-manager/**
 /battlecode/**
 .idea
-
+/multiBot/__pycache__/**
