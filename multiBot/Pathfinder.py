@@ -1,6 +1,7 @@
 import battlecode as bc
 from PriorityQueue import PriorityQueue
 import math
+from LocationUtil import is_empty
 
 directions = list(bc.Direction)
 
@@ -48,9 +49,3 @@ def a_star_search(gc, planet_map, start, goal):
 
 def h(start, end):
     return math.sqrt(start.distance_squared_to(end))
-
-
-def is_empty(gc, planet_map, map_loc):
-    return (planet_map.on_map(map_loc)
-            and planet_map.is_passable_terrain_at(map_loc)
-            and len(gc.sense_nearby_units(map_loc, 0)) == 0)

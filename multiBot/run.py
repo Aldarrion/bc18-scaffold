@@ -4,6 +4,7 @@ import sys
 import traceback
 import time
 from Pathfinder import a_star_search
+from ProductionManager import ProductionManager
 
 import os
 print(os.getcwd())
@@ -43,11 +44,21 @@ units = list(gc.my_units())
 
 turn_number = 0
 
+production_manager = ProductionManager(gc)
+
 while True:
     turn_number += 1
     print('=============================')
     print(f'Turn {turn_number} started')
     print('-----------------------------')
+
+    production_manager.update()
+
+    gc.next_turn()
+    sys.stdout.flush()
+    sys.stderr.flush()
+    continue
+
     units = list(gc.my_units())
 
     # If on earth take the first unit and make in walk around
@@ -79,11 +90,6 @@ while True:
                     print(
                         f'Pathfinding error from [{unit_map_loc.x}, {unit_map_loc.y}] to [{next_pos.x}, {next_pos.y}]')
                     print('Is passable next: ', earth_map.is_passable_terrain_at(next_pos))
-
-    gc.next_turn()
-    sys.stdout.flush()
-    sys.stderr.flush()
-    continue
 
     # We only support Python 3, which means brackets around print()
     print('pyround:', gc.round(), 'time left:', gc.get_time_left_ms(), 'ms')
