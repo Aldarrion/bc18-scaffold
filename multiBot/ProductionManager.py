@@ -58,8 +58,6 @@ class ProductionManager:
             if self.gc.can_produce_robot(f.id, bc.UnitType.Ranger):
                 print('Producing ranger')
                 self.gc.produce_robot(f.id, bc.UnitType.Ranger)
-            else:
-                print('Factory cannot produce Ranger')
 
     def build_projects(self):
         while self.should_build_factory():
@@ -120,7 +118,7 @@ class ProductionManager:
                         print(f'Path found {path_to_loc}')
                         next_node = path_to_loc[1]
                         next_dir = worker_loc.direction_to(bc.MapLocation(self.gc.planet(), next_node[0], next_node[1]))
-                        if self.gc.can_move(worker.id, next_dir):
+                        if self.gc.can_move(worker.id, next_dir) and self.gc.is_move_ready(worker.id):
                             print('Worker move')
                             self.gc.move_robot(worker.id, next_dir)
 
