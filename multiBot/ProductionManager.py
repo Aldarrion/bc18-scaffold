@@ -7,7 +7,7 @@ from Pathfinder import a_star_search
 from typing import List, Dict
 
 
-Project = namedtuple('Project', ['karbonite', 'is_in_progress'])
+Project = namedtuple('Project', [('karbonite', int), ('is_in_progress', bool)])
 
 
 class ProductionManager:
