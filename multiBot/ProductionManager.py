@@ -4,10 +4,10 @@ from LocationUtil import is_empty, cross_directions, find_empty_loc_near
 from HashableMapLocation import HashableMapLocation
 from functools import reduce
 from Pathfinder import a_star_search
-from typing import List, Dict
+from typing import List, Dict, NamedTuple
 
 
-Project = namedtuple('Project', [('karbonite', int), ('is_in_progress', bool)])
+Project = NamedTuple('Project', [('karbonite', int), ('is_in_progress', bool)])
 
 
 class ProductionManager:
