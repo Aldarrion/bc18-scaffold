@@ -40,6 +40,8 @@ class ProductionManager:
                 self.projects.pop(loc)
 
     def update_units(self):
+        self.idle_workers = []
+        self.factories = []
         for unit in self.gc.my_units():
             if unit.unit_type == bc.UnitType.Factory:
                 self.factories.append(unit)
@@ -54,7 +56,10 @@ class ProductionManager:
     def produce_units(self):
         for f in self.factories:
             if self.gc.can_produce_robot(f.id, bc.UnitType.Ranger):
+                print('Producing ranger')
                 self.gc.produce_robot(f.id, bc.UnitType.Ranger)
+            else:
+                print('Factory cannot produce Ranger')
 
     def build_projects(self):
         while self.should_build_factory():
