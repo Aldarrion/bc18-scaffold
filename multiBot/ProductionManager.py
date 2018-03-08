@@ -53,7 +53,7 @@ class ProductionManager:
         self.update_units()
         self.manage_production()
         self.update_miners()
-        # self.update_karbonite()
+        self.update_karbonite()
 
     def update_miners(self) -> None:
         for miner in self.miners:
@@ -79,8 +79,8 @@ class ProductionManager:
                 self.projects.pop(loc)
 
     def update_karbonite(self):
-        for i in len(range(self.karbonite_locations)):
-            for j in len(range(self.karbonite_locations[i])):
+        for i in range(len(self.karbonite_locations)):
+            for j in range(len(self.karbonite_locations[i])):
                 current_location = bc.MapLocation(bc.Planet.Earth, i, j)
                 try:
                     current_carbonite = self.gc.karbonite_at(current_location)
