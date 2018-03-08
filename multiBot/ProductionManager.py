@@ -126,6 +126,13 @@ class ProductionManager:
             print('No workers found')
             return
 
+        miner_ids = [miner.id for miner in self.miners]
+        print(f'MINERS: {miner_ids}')
+        print(f'WORKERS: {[worker.id for worker in self.idle_workers]}')
+
+        self.idle_workers = list(filter(lambda w: w.id not in miner_ids, self.idle_workers))
+        print(f'WORKERS updated: {[worker.id for worker in self.idle_workers]}')
+
         # Assign a worker to each project
         print('Managing workers')
         self.build_incomplete_projects()
@@ -157,10 +164,11 @@ class ProductionManager:
 
     def assign_idle_workers(self) -> None:
         miners_to_asign = len(self.idle_workers)/2 - len(self.miners)
-        print(f'assigning {miners_to_asign} workers to mining out of {len(self.idle_workers)}')
+        print(f'assigning {miners_to_asign} workers to mining out of {len(self.idle_workers)} idle.')
         for worker in self.idle_workers:
             if (miners_to_asign > 0):
                 self.miners.append(worker)
+                self.idle_workers.remove(worker)
                 miners_to_asign = miners_to_asign - 1
             else:
                 projects_in_progress = [k for k, v in self.projects.items() if v.is_in_progress]
