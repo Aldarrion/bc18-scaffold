@@ -31,6 +31,6 @@ def navigate_unit_to(gc, unit, target_location):
                 next_node = path_to_loc[1]
                 next_dir = unit_location.direction_to(bc.MapLocation(gc.planet(), next_node[0], next_node[1]))
                 if gc.can_move(unit.id, next_dir) and gc.is_move_ready(unit.id):
-                    print('Unit move')
+                    print(f'Unit {unit.id} move to {next_node}')
                     gc.move_robot(unit.id, next_dir)
         return False

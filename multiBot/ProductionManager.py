@@ -56,7 +56,9 @@ class ProductionManager:
         self.update_karbonite()
 
     def update_miners(self) -> None:
-        for miner in self.miners:
+        for old_miner in self.miners:
+            my_units = self.gc.my_units()
+            miner = next(x for x in my_units if x.id == old_miner.id)
             miner_location = miner.location.map_location()
             closest_karbonite_location = self.find_closest_karbonite(miner_location)
             if (miner_location == closest_karbonite_location):
