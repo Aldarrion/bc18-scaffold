@@ -5,6 +5,7 @@ import traceback
 import time
 from Pathfinder import a_star_search
 from ProductionManager import ProductionManager
+from MilitaryManager import MilitaryManager
 
 import os
 print(os.getcwd())
@@ -45,6 +46,7 @@ units = list(gc.my_units())
 turn_number = 0
 
 production_manager = ProductionManager(gc)
+military_manager = MilitaryManager(gc, production_manager)
 
 while True:
     turn_number += 1
@@ -53,6 +55,7 @@ while True:
     print('-----------------------------')
 
     production_manager.update()
+    military_manager.update()
 
     gc.next_turn()
     sys.stdout.flush()

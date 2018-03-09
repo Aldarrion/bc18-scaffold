@@ -12,6 +12,8 @@ from UnitController import navigate_unit_to
 
 Project = namedtuple('Project', ['karbonite', 'is_in_progress'])
 
+directions = list(bc.Direction)
+
 
 class ProductionManager:
     def __init__(self, gc: bc.GameController) -> None:
@@ -109,6 +111,12 @@ class ProductionManager:
             if self.gc.can_produce_robot(f.id, bc.UnitType.Ranger):
                 print('Producing a Ranger')
                 self.gc.produce_robot(f.id, bc.UnitType.Ranger)
+            garrison = f.structure_garrison()
+            if len(garrison) > 0:
+                d = random.choice(directions)
+                if self.gc.can_unload(f.id, d):
+                    print('Unloaded a Ranger!')
+                    self.gc.unload(f.id, d)
 
     def build_projects(self) -> None:
         while self.should_build_factory():
