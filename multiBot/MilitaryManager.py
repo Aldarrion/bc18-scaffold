@@ -18,6 +18,7 @@ class ActionType(Enum):
     ATTACK = 1
     DEFENSE = 2
     MOVE = 3
+    MARS_HOLLIDAY = 4
 
 
 class Demands(Enum):
@@ -46,6 +47,8 @@ class MilitaryManager:
         self.soldiers_group = dict()
         self.explorers = []
         self.explorerQueue = []
+        self.rockets_in_processing = []
+        self.loaded_rockets = []
 
     def move_soldiers_inside_group(self, group):
         ret_count = 0
@@ -168,6 +171,78 @@ class MilitaryManager:
         self.action_ids += 1
         return self.action_ids
 
+    def attack_action(self, action, group):
+        nearby = self.gc.sense_nearby_units(action.location, 4)
+        enemy_count = 0
+        for type in group.soldiers:
+            if not self.is_healer(type):
+                for soldier_id in group.soldiers[type]:
+                    attacked = False
+                    if soldier_id not in self.soldiers_in_action:
+                        for other in nearby:
+                            if other.team != self.gc.team():
+                                enemy_count += 1
+                                if self.gc.is_attack_ready(soldier_id) and \
+                                        self.gc.can_attack(soldier_id, other.id):
+                                    self.gc.attack(soldier_id, other.id)
+                                    attacked = True
+                                    continue
+                    if not attacked:
+                        pass
+            else:
+                for soldier_id in group.soldiers[type]:
+                    healed = False
+                    if soldier_id not in self.soldiers_in_action:
+                        for other in nearby:
+                            if self.gc.is_heal_ready(soldier_id) \
+                                    and other.team == self.gc.team() and \
+                                    self.gc.can_heal(soldier_id, other.id):
+                                self.gc.heal(soldier_id, other.id)
+                                healed = True
+                                continue
+                    if not healed:
+                        pass
+        if enemy_count == 0:
+            self.planned_actions.remove(action)
+            self.free_groups.append(group.id)
+
+    def holliday_action(self, action, group):
+        nearby = self.gc.sense_nearby_units_by_team(action.location, 2, self.gc.team())
+        rocket = None
+        for other in nearby:
+            if other.unit_type == bc.UnitType.Rocket and other.location.map_location() == action.location:
+                rocket = other
+        if rocket is not None:
+            all_soldiers = 0
+            loaded_soldiers = 0
+            for type in group.soldiers:
+                for soldier_id in group.soldiers[type]:
+                    all_soldiers += 1
+                    if soldier_id not in self.soldiers_in_action:
+                        if self.gc.can_load(rocket.id, soldier_id):
+                            self.gc.load(rocket.id, soldier_id)
+                            group.soldiers[type].remove(soldier_id)
+                            self.soldiers_group.pop(soldier_id, None)
+                            loaded_soldiers += 1
+            if loaded_soldiers == all_soldiers:
+                self.groups.pop(group.id, None)
+                if group.id in self.free_groups:
+                    self.free_groups.remove(group.id)
+                self.planned_actions.remove(action)
+            garrison = rocket.structure_garrison()
+            if len(garrison) >= 4:
+                try:
+                    self.planned_actions.remove(action)
+                except:
+                    print("Action already removed")
+                self.loaded_rockets(rocket.id)
+                self.rockets_in_processing.remove(rocket.id)
+                self.launch_rocket(rocket.id)
+        else:
+            self.planned_actions.remove(action)
+            self.free_groups.append(group.id)
+
+
     def execute_actions(self):
         for action in self.planned_actions:
             group = None
@@ -184,43 +259,13 @@ class MilitaryManager:
                         self.soldiers_in_action[soldier_id] = action.location
                 self.planned_actions.remove(action)
                 if action.round == -1:
-                    self.next_actions[group.id] = Action(self.get_action_id(), ActionType.ATTACK, action.location, 0, group.id)
+                    self.next_actions[group.id] = Action(self.get_action_id(), ActionType.ATTACK, action.location, 0,
+                                                         group.id)
+                if action.round == -2:
+                    self.next_actions[group.id] = Action(self.get_action_id(), ActionType.MARS_HOLLIDAY, action.location, 0,
+                                                         group.id)
             if action.action_type == ActionType.ATTACK:
-                nearby = self.gc.sense_nearby_units(action.location, 4)
-                enemy_count = 0
-                for type in group.soldiers:
-                    if not self.is_healer(type):
-                        for soldier_id in group.soldiers[type]:
-                            attacked = False
-                            if soldier_id not in self.soldiers_in_action:
-                                for other in nearby:
-                                    if other.team != self.gc.team():
-                                        enemy_count += 1
-                                        if self.gc.is_attack_ready(soldier_id) and \
-                                                self.gc.can_attack(soldier_id, other.id):
-                                            self.gc.attack(soldier_id, other.id)
-                                            attacked = True
-                                            continue
-                            if not attacked:
-                                pass
-                                # TODO move near
-                    else:
-                        for soldier_id in group.soldiers[type]:
-                            healed = False
-                            if soldier_id not in self.soldiers_in_action:
-                                for other in nearby:
-                                    if self.gc.is_heal_ready(soldier_id) \
-                                            and other.team == self.gc.team() and \
-                                            self.gc.can_heal(soldier_id, other.id):
-                                        self.gc.heal(soldier_id, other.id)
-                                        healed = True
-                                        continue
-                            if not healed:
-                                pass
-                                # TODO move near
-                if enemy_count == 0:
-                    self.planned_actions.remove(action)
-                    self.free_groups.append(group.id)
+                self.attack_action(action, group)
 
     # exploration
     def exploration(self, ranger_id):
@@ -268,6 +313,7 @@ class MilitaryManager:
             return False
         except:
             return False
+
     # moving
     # attacking
     # planning
@@ -280,10 +326,19 @@ class MilitaryManager:
         while len(self.enemy_workers) > 0:
             self.new_action(ActionType.MOVE, self.enemy_workers.pop(), -1)
 
+    def check_rockets(self):
+        for unit in self.gc.my_units():
+            if unit.unit_type == bc.UnitType.Rocket and unit.id not in self.rockets_in_processing and unit.id not in self.loaded_rockets:
+                self.rockets_in_processing.append(unit.id)
+                self.new_action(ActionType.MOVE, unit.location.map_location(), -2)
+
+    def launch_rocket(self, rocket_id):
+        # TODO:launching rocket
+        pass
+
     def update(self):
         self.explore()
         self.distribute_soldiers()
         self.make_plans()
         self.execute_actions()
         self.service_groups()
-
