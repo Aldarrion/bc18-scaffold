@@ -332,8 +332,16 @@ class MilitaryManager:
                 self.new_action(ActionType.MOVE, unit.location.map_location(), -2)
 
     def launch_rocket(self, rocket_id):
-        # TODO:launching rocket
-        pass
+        self.gc.launch_rocket(rocket_id, self.get_next_rocket_destination())
+
+    def get_next_rocket_destination(self) -> bc.MapLocation:
+        mars_map = self.gc.starting_map(bc.Planet.Mars)  # type: bc.PlanetMap
+        while True:
+            x = random.randint(0, mars_map.width - 1)
+            y = random.randint(0, mars_map.height - 1)
+            map_loc = bc.MapLocation(bc.Planet.Mars, x, y)
+            if mars_map.is_passable_terrain_at(map_loc):
+                return map_loc
 
     def attack_when_possible(self):
         for unit in self.gc.my_units():
@@ -350,7 +358,13 @@ class MilitaryManager:
                     self.gc.attack(unit.id, n.id)
                     break
 
+    def remove_dead_soldiers(self):
+        my_unit_ids = [u.id for u in self.gc.my_units()]
+        for k, g in self.groups.items():
+            self.groups[k] = Group(g.id, {t: [x for x in v if x in my_unit_ids] for t, v in g.soldiers.items()}, g.action)
+
     def update(self):
+        self.remove_dead_soldiers()
         self.explore()
         self.distribute_soldiers()
         self.make_plans()
