@@ -10,14 +10,13 @@ from typing import List, Dict, NamedTuple
 
 from UnitController import navigate_unit_to
 
-#Project = namedtuple('Project', ['karbonite', 'is_in_progress', 'workers_assigned'])
-
 
 class Project:
-    def __init__(self, karbonite: int, is_in_progress: bool, workers_assigned: int):
+    def __init__(self, karbonite: int, is_in_progress: bool, workers_assigned: int, building_type: bc.UnitType):
         self.karbonite = karbonite  # type: int
         self.is_in_progress = is_in_progress  # type: bool
         self.workers_assigned = workers_assigned  # type: int
+        self.building_type = building_type  # type: bc.UnitType
 
 
 directions = list(bc.Direction)
@@ -27,15 +26,18 @@ class ProductionManager:
     def __init__(self, gc: bc.GameController) -> None:
         self.gc = gc  # type: bc.GameController
         self.factories = []  # type: List[bc.Unit]
+        self.rockets = []  # type: List[bc.Unit]
         self.idle_workers = []  # type: List[bc.Unit]
+        self.figters = []  # type: List[bc.Unit]
         self.projects = dict()  # type: Dict[HashableMapLocation, Project]
         self.karbonite_locations = self.initialize_karbonite_locations()  # type: List[List[int]]
+        self.fighter_types = [bc.UnitType.Ranger, bc.UnitType.Knight, bc.UnitType.Mage, bc.UnitType.Healer]
 
     def initialize_karbonite_locations(self):
         starting_earth_map = self.gc.starting_map(bc.Planet.Earth)  # type: bc.PlanetMap
         width = starting_earth_map.width
         height = starting_earth_map.height
-        result = [[0 for x in range(width)] for y in range(height)]
+        result = [[0 for _ in range(height)] for _ in range(width)]
         for i in range(width):
             for j in range(height):
                 map_location = bc.MapLocation(bc.Planet.Earth, i, j)  # type: bc.MapLocation
@@ -63,7 +65,7 @@ class ProductionManager:
         self.update_karbonite()
 
     def update_projects(self) -> None:
-        for f in self.factories:
+        for f in self.factories + self.rockets:
             loc = HashableMapLocation(f.location.map_location())
             if f.structure_is_built() and loc in self.projects:
                 print(f'Project complete at {f.location.map_location()}')
@@ -89,6 +91,10 @@ class ProductionManager:
                 self.factories.append(unit)
             elif unit.unit_type == bc.UnitType.Worker and unit.location.is_on_map():
                 self.idle_workers.append(unit)
+            elif unit.unit_type == bc.UnitType.Rocket:
+                self.rockets.append(unit)
+            elif unit.unit_type in self.fighter_types:
+                self.figters.append(unit)
         # print(f'Total workers: {len(self.idle_workers)}')
         # print(f'Total factories: {len(self.factories)}')
 
@@ -98,6 +104,8 @@ class ProductionManager:
         self.manage_workers()
 
     def produce_units(self) -> None:
+        if self.should_build_rocket():
+            return
         worker_factories_count = len(self.factories) / 3  # type: float
         i = 0  # type: int
         for f in self.factories:
@@ -115,18 +123,32 @@ class ProductionManager:
                     self.gc.unload(f.id, d)
 
     def build_projects(self) -> None:
-        while self.should_build_factory():
-            print('Creating factory build project')
-            next_loc = self.get_next_build_loc()
-            if next_loc is not None:
-                self.projects[HashableMapLocation(next_loc)] = Project(
-                    bc.UnitType.Factory.blueprint_cost(),
-                    False,
-                    0
-                )
-            else:
-                print('No available spcae for build found')
+        while self.should_build_rocket():
+            if not self.available_karbonite() >= bc.UnitType.Rocket.blueprint_cost():
                 break
+            if not self.create_build_project(bc.UnitType.Rocket):
+                break
+
+        while not self.should_build_rocket() and self.should_build_factory():
+            if not self.available_karbonite() >= bc.UnitType.Factory.blueprint_cost():
+                break
+            if not self.create_build_project(bc.UnitType.Factory):
+                break
+
+    def create_build_project(self, building_type: bc.UnitType) -> bool:
+        print('Creating factory build project')
+        next_loc = self.get_next_build_loc()
+        if next_loc is not None:
+            self.projects[HashableMapLocation(next_loc)] = Project(
+                building_type.blueprint_cost(),
+                False,
+                0,
+                building_type
+            )
+            return True
+        else:
+            print('No available spcae for build found')
+            return False
 
     def manage_workers(self) -> None:
         if len(self.idle_workers) == 0:
@@ -163,9 +185,9 @@ class ProductionManager:
                 # print('Worker is close enough')
                 # Worker is close enough and can build
                 d = worker_loc.direction_to(p_loc.map_location)
-                if (self.gc.karbonite() > bc.UnitType.Factory.blueprint_cost()
-                        and self.gc.can_blueprint(worker.id, bc.UnitType.Factory, d)):
-                    self.gc.blueprint(worker.id, bc.UnitType.Factory, d)
+                if (self.gc.karbonite() > project.building_type.blueprint_cost()
+                        and self.gc.can_blueprint(worker.id, project.building_type, d)):
+                    self.gc.blueprint(worker.id, project.building_type, d)
                     self.projects[p_loc].is_in_progress = True
                     self.projects[p_loc].workers_assigned += 1
 
@@ -255,11 +277,16 @@ class ProductionManager:
                     new_loc = f.location.map_location().add(d)
                     if is_empty(self.gc, self.gc.starting_map(bc.Planet.Earth), new_loc):
                         return new_loc
-
         return None
 
     def should_build_factory(self) -> bool:
-        return len(self.projects) == 0 and self.available_karbonite() >= bc.UnitType.Factory.blueprint_cost()
+        return len(self.projects) == 0
+
+    def should_build_rocket(self) -> bool:
+        return (len(self.projects) == 0
+                and len(self.rockets) == 0
+                and len(self.idle_workers) > 5
+                and len(self.figters) > 5)
 
     def harvest(self, worker, karbonite_location):  # type: (bc.Unit, bc.MapLocation) -> None
         worker_location = worker.location.map_location()

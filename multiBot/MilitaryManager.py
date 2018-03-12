@@ -242,7 +242,6 @@ class MilitaryManager:
             self.planned_actions.remove(action)
             self.free_groups.append(group.id)
 
-
     def execute_actions(self):
         for action in self.planned_actions:
             group = None
