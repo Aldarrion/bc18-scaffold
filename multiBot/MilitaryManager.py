@@ -26,7 +26,7 @@ class Demands(Enum):
 
 
 class MilitaryManager:
-    def __init__(self, gc, pm):
+    def __init__(self, gc: bc.GameController, pm: bc.PlanetMap):
         self.gc = gc
         self.pm = pm
         self.planned_actions = []
@@ -235,7 +235,7 @@ class MilitaryManager:
                     self.planned_actions.remove(action)
                 except:
                     print("Action already removed")
-                self.loaded_rockets(rocket.id)
+                # self.loaded_rockets(rocket.id) # TODO this will crash - list is not callable, should be remove?
                 self.rockets_in_processing.remove(rocket.id)
                 self.launch_rocket(rocket.id)
         else:
@@ -336,9 +336,25 @@ class MilitaryManager:
         # TODO:launching rocket
         pass
 
+    def attack_when_possible(self):
+        for unit in self.gc.my_units():
+            if (not self.gc.is_attack_ready(unit.id)
+                    or not unit.location.is_on_map()):
+                continue
+            nearby = self.gc.sense_nearby_units_by_team(
+                unit.location.map_location(),
+                unit.attack_range(),
+                self.enemy_team
+            )
+            for n in nearby:
+                if self.gc.can_attack(unit.id, n.id):
+                    self.gc.attack(unit.id, n.id)
+                    break
+
     def update(self):
         self.explore()
         self.distribute_soldiers()
         self.make_plans()
         self.execute_actions()
         self.service_groups()
+        self.attack_when_possible()
