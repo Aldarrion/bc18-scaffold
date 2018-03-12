@@ -10,7 +10,15 @@ from typing import List, Dict, NamedTuple
 
 from UnitController import navigate_unit_to
 
-Project = namedtuple('Project', ['karbonite', 'is_in_progress'])
+#Project = namedtuple('Project', ['karbonite', 'is_in_progress', 'workers_assigned'])
+
+
+class Project:
+    def __init__(self, karbonite: int, is_in_progress: bool, workers_assigned: int):
+        self.karbonite = karbonite  # type: int
+        self.is_in_progress = is_in_progress  # type: bool
+        self.workers_assigned = workers_assigned  # type: int
+
 
 directions = list(bc.Direction)
 
@@ -20,23 +28,21 @@ class ProductionManager:
         self.gc = gc  # type: bc.GameController
         self.factories = []  # type: List[bc.Unit]
         self.idle_workers = []  # type: List[bc.Unit]
-        self.miners = [] # type: List[bc.Unit]
         self.projects = dict()  # type: Dict[HashableMapLocation, Project]
-        self.karbonite_locations = self.initialize_karbonite_locations() #type: list[list[int]]
+        self.karbonite_locations = self.initialize_karbonite_locations()  # type: List[List[int]]
 
     def initialize_karbonite_locations(self):
-        starting_earth_map = self.gc.starting_map(bc.Planet.Earth) #type: bc.PlanetMap
+        starting_earth_map = self.gc.starting_map(bc.Planet.Earth)  # type: bc.PlanetMap
         width = starting_earth_map.width
-        height =starting_earth_map.height
+        height = starting_earth_map.height
         result = [[0 for x in range(width)] for y in range(height)]
         for i in range(width):
             for j in range(height):
-                map_location = bc.MapLocation(bc.Planet.Earth, i, j) #type: bc.MapLocation
+                map_location = bc.MapLocation(bc.Planet.Earth, i, j)  # type: bc.MapLocation
                 initial_karbonite = starting_earth_map.initial_karbonite_at(map_location)
-                if (initial_karbonite > 0):
+                if initial_karbonite > 0:
                     result[i][j] = initial_karbonite
         return result
-
 
     def available_karbonite(self) -> int:
         return self.gc.karbonite() - reduce(
@@ -54,26 +60,7 @@ class ProductionManager:
         self.update_projects()
         self.update_units()
         self.manage_production()
-        self.update_miners()
         self.update_karbonite()
-
-    def update_miners(self) -> None:
-        for old_miner in self.miners:
-            my_units = self.gc.my_units()
-            miner = next(x for x in my_units if x.id == old_miner.id)
-            miner_location = miner.location.map_location()
-            closest_karbonite_location = self.find_closest_karbonite(miner_location)
-            if (miner_location == closest_karbonite_location):
-                print(f'Worker {miner.id} is already at karbonite location -> {miner_location} ')
-                self.harvest(miner, closest_karbonite_location)
-            else:
-                print(f'navigate to {closest_karbonite_location}')
-                reached_carbonite = navigate_unit_to(self.gc, miner, closest_karbonite_location)
-                if (reached_carbonite):
-                    self.harvest(miner, closest_karbonite_location)
-                else:
-                    print(f'Worker {miner.id} at {miner_location} navigating to carbonite at {closest_karbonite_location}')
-
 
     def update_projects(self) -> None:
         for f in self.factories:
@@ -81,6 +68,8 @@ class ProductionManager:
             if f.structure_is_built() and loc in self.projects:
                 print(f'Project complete at {f.location.map_location()}')
                 self.projects.pop(loc)
+        for p in self.projects.values():
+            p.workers_assigned = 0
 
     def update_karbonite(self):
         for i in range(len(self.karbonite_locations)):
@@ -100,6 +89,8 @@ class ProductionManager:
                 self.factories.append(unit)
             elif unit.unit_type == bc.UnitType.Worker and unit.location.is_on_map():
                 self.idle_workers.append(unit)
+        # print(f'Total workers: {len(self.idle_workers)}')
+        # print(f'Total factories: {len(self.factories)}')
 
     def manage_production(self) -> None:
         self.produce_units()
@@ -107,8 +98,13 @@ class ProductionManager:
         self.manage_workers()
 
     def produce_units(self) -> None:
+        worker_factories_count = len(self.factories) / 3  # type: float
+        i = 0  # type: int
         for f in self.factories:
-            if self.gc.can_produce_robot(f.id, bc.UnitType.Ranger):
+            if i < worker_factories_count and len(self.idle_workers) < 8:
+                if self.gc.can_produce_robot(f.id, bc.UnitType.Worker):
+                    self.gc.produce_robot(f.id, bc.UnitType.Worker)
+            elif self.gc.can_produce_robot(f.id, bc.UnitType.Ranger):
                 print('Producing a Ranger')
                 self.gc.produce_robot(f.id, bc.UnitType.Ranger)
             garrison = f.structure_garrison()
@@ -125,7 +121,8 @@ class ProductionManager:
             if next_loc is not None:
                 self.projects[HashableMapLocation(next_loc)] = Project(
                     bc.UnitType.Factory.blueprint_cost(),
-                    False
+                    False,
+                    0
                 )
             else:
                 print('No available spcae for build found')
@@ -136,21 +133,19 @@ class ProductionManager:
             print('No workers found')
             return
 
-        miner_ids = [miner.id for miner in self.miners]
-        print(f'MINERS: {miner_ids}')
-        print(f'WORKERS: {[worker.id for worker in self.idle_workers]}')
-
-        self.idle_workers = list(filter(lambda w: w.id not in miner_ids, self.idle_workers))
-        print(f'WORKERS updated: {[worker.id for worker in self.idle_workers]}')
-
         # Assign a worker to each project
         print('Managing workers')
         self.build_incomplete_projects()
 
+        self.assign_builders()
+        self.assign_miners()
         # Assign remaining idle workers
         self.assign_idle_workers()
 
     def build_incomplete_projects(self) -> None:
+        if len(self.idle_workers) == 0:
+            return
+
         for p_loc, project in {k: v for k, v in self.projects.items() if not v.is_in_progress}.items():
             worker = min(
                 self.idle_workers,
@@ -160,6 +155,10 @@ class ProductionManager:
             self.idle_workers.remove(worker)
             # Send this worker to build
             worker_loc = worker.location.map_location()
+            if not worker_loc.is_adjacent_to(p_loc.map_location):
+                # Worker is too far, move it closer
+                self.move_close_to(worker, p_loc.map_location)
+
             if worker_loc.is_adjacent_to(p_loc.map_location):
                 # print('Worker is close enough')
                 # Worker is close enough and can build
@@ -167,33 +166,48 @@ class ProductionManager:
                 if (self.gc.karbonite() > bc.UnitType.Factory.blueprint_cost()
                         and self.gc.can_blueprint(worker.id, bc.UnitType.Factory, d)):
                     self.gc.blueprint(worker.id, bc.UnitType.Factory, d)
-                    self.projects[p_loc] = Project(project.karbonite, True)
-            else:
-                # Worker is too far, move it closer
-                self.move_close_to(worker, p_loc.map_location)
+                    self.projects[p_loc].is_in_progress = True
+                    self.projects[p_loc].workers_assigned += 1
 
     def assign_idle_workers(self) -> None:
-        miners_to_asign = len(self.idle_workers)/2 - len(self.miners)
-        print(f'assigning {miners_to_asign} workers to mining out of {len(self.idle_workers)} idle.')
-        for worker in self.idle_workers:
-            if (miners_to_asign > 0):
-                self.miners.append(worker)
-                self.idle_workers.remove(worker)
-                miners_to_asign = miners_to_asign - 1
-            else:
-                projects_in_progress = [k for k, v in self.projects.items() if v.is_in_progress]
-                if len(projects_in_progress) > 0:
-                    closest_project = min(
-                        projects_in_progress,
-                        key=lambda p: p.map_location.distance_squared_to(worker.location.map_location())
-                    )
+        pass
 
-                    if worker.location.map_location().is_adjacent_to(closest_project.map_location):
-                        # Worker is close enough and can build
-                        self.try_to_build_at(worker, closest_project.map_location)
-                    else:
-                        # Worker is too far, move it closer
-                        self.move_close_to(worker, closest_project.map_location)
+    def assign_builders(self):
+        # print(f'--- Assign builders')
+        for k, p in self.projects.items():
+            while p.is_in_progress and p.workers_assigned < 4 and len(self.idle_workers) > 0:
+                # print(f'--- Workers assigned = {p.workers_assigned}, idle: {len(self.idle_workers)}')
+                worker = min(
+                    self.idle_workers,
+                    key=lambda w: w.location.map_location().distance_squared_to(k.map_location)
+                )
+                p.workers_assigned += 1
+                self.idle_workers.remove(worker)
+                if not worker.location.map_location().is_adjacent_to(k.map_location):
+                    # Worker is too far, move it closer
+                    self.move_close_to(worker, k.map_location)
+                if worker.location.map_location().is_adjacent_to(k.map_location):
+                    # Worker is close enough and can build
+                    self.try_to_build_at(worker, k.map_location)
+
+    def assign_miners(self) -> None:
+        for miner in self.idle_workers:
+            miner_location = miner.location.map_location()
+            closest_karbonite_location = self.find_closest_karbonite(miner_location)
+            if miner_location == closest_karbonite_location:
+                # print(f'Worker {miner.id} is already at karbonite location -> {miner_location} ')
+                self.harvest(miner, closest_karbonite_location)
+            else:
+                # print(f'navigate to {closest_karbonite_location}')
+                reached_carbonite = navigate_unit_to(self.gc, miner, closest_karbonite_location)
+                if reached_carbonite:
+                    self.harvest(miner, closest_karbonite_location)
+                else:
+                    pass
+                    # print(
+                    #     f'Worker {miner.id} at {miner_location} '
+                    #     f'navigating to carbonite at {closest_karbonite_location}'
+                    # )
 
     def try_to_build_at(self, worker: bc.Unit, p_loc: bc.MapLocation) -> None:
         units = self.gc.sense_nearby_units(p_loc, 1)
@@ -247,24 +261,24 @@ class ProductionManager:
     def should_build_factory(self) -> bool:
         return len(self.projects) == 0 and self.available_karbonite() >= bc.UnitType.Factory.blueprint_cost()
 
-    def harvest(self, worker, karbonite_location): #type: (bc.Unit, bc.MapLocation) -> None
+    def harvest(self, worker, karbonite_location):  # type: (bc.Unit, bc.MapLocation) -> None
         worker_location = worker.location.map_location()
         direction = worker_location.direction_to(karbonite_location)
-        if (self.gc.can_harvest(worker.id, direction)):
+        if self.gc.can_harvest(worker.id, direction):
             self.gc.harvest(worker.id, direction)
             print(f'Worker {worker.id} at {worker_location} HARVESTING at {karbonite_location}')
         else:
             print(f'Worker {worker.id} at {worker_location} CANNOT harvest at {karbonite_location}')
 
-    def find_closest_karbonite(self, location): # type: (bc.MapLocation) -> bc.MapLocation
-        closest_location = location # type: bc.MapLocation
+    def find_closest_karbonite(self, location):  # type: (bc.MapLocation) -> bc.MapLocation
+        closest_location = location  # type: bc.MapLocation
         closest_distance = sys.maxsize
 
         for i in range(len(self.karbonite_locations)):
             for j in range(len(self.karbonite_locations[i])):
                 karbonite_location = bc.MapLocation(location.planet, i, j)
                 potential_distance = karbonite_location.distance_squared_to(location)
-                if (self.karbonite_locations[i][j] > 0 and potential_distance < closest_distance):
+                if self.karbonite_locations[i][j] > 0 and potential_distance < closest_distance:
                     closest_distance = potential_distance
                     closest_location = karbonite_location
 
