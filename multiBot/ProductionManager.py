@@ -32,6 +32,16 @@ class ProductionManager:
         self.projects = dict()  # type: Dict[HashableMapLocation, Project]
         self.karbonite_locations = self.initialize_karbonite_locations()  # type: List[List[int]]
         self.fighter_types = [bc.UnitType.Ranger, bc.UnitType.Knight, bc.UnitType.Mage, bc.UnitType.Healer]
+        self.expected_unit_ratios = {
+            bc.UnitType.Worker: 25,
+            bc.UnitType.Ranger: 40,
+            bc.UnitType.Knight: 25,
+            bc.UnitType.Healer: 5,
+            bc.UnitType.Mage: 5
+        }  # type: Dict[bc.UnitType, float]
+        # Normalize ratios in case our values do not add up to 100
+        self.normalize_ratios(self.expected_unit_ratios)
+        self.current_unit_ratios = dict()  # type: Dict[bc.UnitType, float]
 
     def initialize_karbonite_locations(self):
         starting_earth_map = self.gc.starting_map(bc.Planet.Earth)  # type: bc.PlanetMap
@@ -106,21 +116,49 @@ class ProductionManager:
     def produce_units(self) -> None:
         if self.should_build_rocket():
             return
-        worker_factories_count = len(self.factories) / 3  # type: float
-        i = 0  # type: int
+
         for f in self.factories:
-            if i < worker_factories_count and len(self.idle_workers) < 8:
-                if self.gc.can_produce_robot(f.id, bc.UnitType.Worker):
-                    self.gc.produce_robot(f.id, bc.UnitType.Worker)
-            elif self.gc.can_produce_robot(f.id, bc.UnitType.Ranger):
-                print('Producing a Ranger')
-                self.gc.produce_robot(f.id, bc.UnitType.Ranger)
+            priority = self.get_unit_priority()
+            for u in priority:
+                if self.gc.can_produce_robot(f.id, u):
+                    self.gc.produce_robot(f.id, u)
+                    break
             garrison = f.structure_garrison()
             if len(garrison) > 0:
                 d = random.choice(directions)
                 if self.gc.can_unload(f.id, d):
                     print('Unloaded a Ranger!')
                     self.gc.unload(f.id, d)
+
+    def get_unit_priority(self) -> List[bc.UnitType]:
+        self.update_unit_ratios()
+        priority = [(k, self.current_unit_ratios[k] - v)
+                    for k, v
+                    in self.expected_unit_ratios.items()
+                    if self.current_unit_ratios[k] - v < 50]
+        priority.sort(key=lambda x: x[1])
+        return [x for (x, y) in priority]
+
+    def update_unit_ratios(self) -> None:
+        self.current_unit_ratios = {k: 0 for k in list(bc.UnitType)}  # type: Dict[bc.UnitType, float]
+        for unit in self.gc.my_units():
+            if unit.unit_type in self.current_unit_ratios:
+                self.current_unit_ratios[unit.unit_type] += 1
+            else:
+                self.current_unit_ratios[unit.unit_type] = 1
+        self.normalize_unit_ratios()
+
+    def normalize_unit_ratios(self) -> None:
+        self.normalize_ratios(self.current_unit_ratios)
+
+    @staticmethod
+    def normalize_ratios(ratios: Dict[bc.UnitType, float]) -> None:
+        total = sum(ratios.values())
+        if total == 0:
+            return
+        ratio = 100 / total
+        for t in ratios:
+            ratios[t] *= ratio
 
     def build_projects(self) -> None:
         while self.should_build_rocket():
@@ -272,7 +310,7 @@ class ProductionManager:
                         return new_loc
         # Find a place close to other factories
         else:
-            for f in self.factories:
+            for f in self.factories + self.rockets:
                 for d in cross_directions:
                     new_loc = f.location.map_location().add(d)
                     if is_empty(self.gc, self.gc.starting_map(bc.Planet.Earth), new_loc):
