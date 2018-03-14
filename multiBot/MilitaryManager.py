@@ -73,11 +73,9 @@ class MilitaryManager:
                 if navigate_unit_to(self.gc, unit, self.soldiers_in_action[soldier_id]):
                     self.soldiers_in_action.pop(soldier_id, None)
                     end = time.time()
-                    print("T-navigation-group: ", end - start)
                     return False
                 else:
                     end = time.time()
-                    print("T-navigation-group: ", end - start)
                     return True
             else:
                 self.soldiers_in_action.pop(soldier_id, None)
@@ -125,10 +123,8 @@ class MilitaryManager:
                 continue
             if self.is_soldier(unit.unit_type):
                 if unit.id not in self.soldiers_group:
-                    print("Distributing new created soldiers")
                     if len(self.explorerQueue) > 0 and self.get_unit_type(
                             unit) == "ranger" and unit.id not in self.explorers:
-                        print(f"New explorer with id {unit.id}")
                         self.explorers.append(unit.id)
                         self.explorerQueue.pop()
                         continue
@@ -176,7 +172,6 @@ class MilitaryManager:
 
     # adds new action to planned actions
     def new_action(self, action_type, location, round, group_id=None):
-        print('New action')
         self.planned_actions.append(Action(self.get_action_id(), action_type, location, round, group_id))
 
     def get_action_id(self):
@@ -306,7 +301,6 @@ class MilitaryManager:
 
     def explore(self):
         demands_count = 0
-        print(self.explorers)
         for ranger_id in self.explorers:
             try:
                 ranger = self.gc.unit(ranger_id)
@@ -337,7 +331,6 @@ class MilitaryManager:
             return False
 
     def make_plans(self):
-        print('Planning')
         while len(self.enemy_rockets) > 0:
             self.new_action(ActionType.MOVE, self.enemy_rockets.pop(), -1)
         while len(self.enemy_factories) > 0:
@@ -358,7 +351,6 @@ class MilitaryManager:
                         act_unloads += 1
                         d = random.choice(directions)
                         if self.gc.can_unload(unit.id, d):
-                            print('Unloaded a Ranger!')
                             self.gc.unload(unit.id, d)
                 else:
                     self.rockets_in_processing.append(unit.id)
@@ -384,7 +376,6 @@ class MilitaryManager:
         else:
             max_tries = 20
         act_tries = 0
-        print(min_x, min_y, max_x, max_y)
         while True:
             if max_tries < act_tries:
                 min_x, min_y, max_x, max_y = self.get_random_parameters(None, None, map)
@@ -393,7 +384,6 @@ class MilitaryManager:
             map_loc = bc.MapLocation(planet, x, y)
             act_tries += 1
             if map.is_passable_terrain_at(map_loc):
-                print("x: ", x, "y: ", y, "location: ", location, "radius: ", radius)
                 return map_loc
 
     def get_random_parameters(self, location, radius, map):
