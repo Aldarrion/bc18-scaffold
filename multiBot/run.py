@@ -61,6 +61,8 @@ turn_number = 0
 
 production_manager = ProductionManager(gc)
 military_manager = MilitaryManager(gc, production_manager)
+bet_time = 0
+end_time = 0
 
 while True:
     turn_number += 1
@@ -68,8 +70,16 @@ while True:
     print(f'Turn {turn_number} started')
     print('-----------------------------')
 
-    production_manager.update()
-    military_manager.update()
+    start = time.time()
+    if gc.get_time_left_ms() > 300:
+        production_manager.update()
+        bet_time += time.time() - start
+        print("between: ", bet_time )
+    if gc.get_time_left_ms() > 150:
+        start = time.time()
+        military_manager.update()
+        end_time += time.time() - start
+        print("End: ", end_time)
 
     gc.next_turn()
     sys.stdout.flush()

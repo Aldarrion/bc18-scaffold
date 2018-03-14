@@ -5,6 +5,9 @@ from enum import Enum
 import random
 from UnitController import navigate_unit_to
 import sys
+import time
+
+from builtins import print
 
 Action = namedtuple('Action', ['id', 'action_type', "location", "round", "group_id"])
 Group = namedtuple('Group', ['id', 'soldiers', 'action'])
@@ -66,10 +69,15 @@ class MilitaryManager:
             if self.soldiers_in_action[soldier_id] is not None and \
                             unit.location.map_location().distance_squared_to(
                                 self.soldiers_in_action[soldier_id]) > unit.attack_range():
+                start = time.time()
                 if navigate_unit_to(self.gc, unit, self.soldiers_in_action[soldier_id]):
                     self.soldiers_in_action.pop(soldier_id, None)
+                    end = time.time()
+                    print("T-navigation-group: ", end - start)
                     return False
                 else:
+                    end = time.time()
+                    print("T-navigation-group: ", end - start)
                     return True
             else:
                 self.soldiers_in_action.pop(soldier_id, None)
@@ -88,8 +96,11 @@ class MilitaryManager:
             else:
                 for type in group.soldiers:
                     for soldier_id in group.soldiers[type]:
-                        if not self.fight_with_soldier(soldier_id):
-                            self.go_somewhere(soldier_id)
+                        try:
+                            if not self.fight_with_soldier(soldier_id):
+                                self.go_somewhere(soldier_id)
+                        except Exception as exc:
+                            print(exc)
 
     def fight_with_soldier(self, soldier_id):
         soldier = self.gc.unit(soldier_id)
@@ -115,7 +126,8 @@ class MilitaryManager:
             if self.is_soldier(unit.unit_type):
                 if unit.id not in self.soldiers_group:
                     print("Distributing new created soldiers")
-                    if len(self.explorerQueue) > 0 and self.get_unit_type(unit) == "ranger":
+                    if len(self.explorerQueue) > 0 and self.get_unit_type(
+                            unit) == "ranger" and unit.id not in self.explorers:
                         print(f"New explorer with id {unit.id}")
                         self.explorers.append(unit.id)
                         self.explorerQueue.pop()
@@ -206,31 +218,29 @@ class MilitaryManager:
             self.planned_actions.remove(action)
             self.free_groups.append(group.id)
 
-    def holliday_action(self, action, group):
-        nearby = self.gc.sense_nearby_units_by_team(action.location, 2, self.gc.team())
+    def holliday_action(self, action):
+        nearby = self.gc.sense_nearby_units_by_team(action.location, 3, self.gc.team())
         rocket = None
         for other in nearby:
             if other.unit_type == bc.UnitType.Rocket and other.location.map_location() == action.location:
                 rocket = other
         if rocket is not None:
-            all_soldiers = 0
             loaded_soldiers = 0
-            for type in group.soldiers:
-                for soldier_id in group.soldiers[type]:
-                    all_soldiers += 1
-                    if soldier_id not in self.soldiers_in_action:
-                        if self.gc.can_load(rocket.id, soldier_id):
-                            self.gc.load(rocket.id, soldier_id)
-                            group.soldiers[type].remove(soldier_id)
-                            self.soldiers_group.pop(soldier_id, None)
-                            loaded_soldiers += 1
-            if loaded_soldiers == all_soldiers:
-                self.groups.pop(group.id, None)
-                if group.id in self.free_groups:
-                    self.free_groups.remove(group.id)
-                self.planned_actions.remove(action)
+            for near in nearby:
+                if (self.is_soldier(
+                        near.unit_type) or near.unit_type == bc.UnitType.Worker) and near.id not in self.soldiers_in_action:
+                    if self.gc.can_load(rocket.id, near.id):
+                        self.gc.load(rocket.id, near.id)
+                        if not near.unit_type == bc.UnitType.Worker:
+                            try:
+                                self.soldiers_group[near.id].soldiers[self.get_unit_type(self.gc.unit(near.id))].remove(
+                                    near.id)
+                            except Exception as exc:
+                                print(exc)
+                        self.soldiers_group.pop(near.id, None)
+                        loaded_soldiers += 1
             garrison = rocket.structure_garrison()
-            if len(garrison) >= 4:
+            if len(garrison) >= 2:
                 try:
                     self.planned_actions.remove(action)
                 except:
@@ -240,10 +250,12 @@ class MilitaryManager:
                 self.launch_rocket(rocket.id)
         else:
             self.planned_actions.remove(action)
-            self.free_groups.append(group.id)
 
     def execute_actions(self):
         for action in self.planned_actions:
+            if action.action_type == ActionType.MARS_HOLLIDAY:
+                self.holliday_action(action)
+                continue
             group = None
             if action.group_id is not None:
                 group = self.groups[action.group_id]
@@ -261,7 +273,8 @@ class MilitaryManager:
                     self.next_actions[group.id] = Action(self.get_action_id(), ActionType.ATTACK, action.location, 0,
                                                          group.id)
                 if action.round == -2:
-                    self.next_actions[group.id] = Action(self.get_action_id(), ActionType.MARS_HOLLIDAY, action.location, 0,
+                    self.next_actions[group.id] = Action(self.get_action_id(), ActionType.MARS_HOLLIDAY,
+                                                         action.location, 0,
                                                          group.id)
             if action.action_type == ActionType.ATTACK:
                 self.attack_action(action, group)
@@ -270,7 +283,10 @@ class MilitaryManager:
     def exploration(self, ranger_id):
         try:
             ranger = self.gc.unit(ranger_id)
-            self.go_somewhere(ranger_id)
+            if ranger_id not in self.soldiers_in_action:
+                self.go_somewhere(ranger_id, False)
+            if navigate_unit_to(self.gc, ranger, self.soldiers_in_action[ranger_id]):
+                self.soldiers_in_action.pop(ranger_id, None)
             for unit in self.gc.sense_nearby_units_by_team(ranger.location.map_location(), ranger.attack_range(),
                                                            self.enemy_team):
                 if unit.unit_type == bc.UnitType.Rocket:
@@ -284,16 +300,19 @@ class MilitaryManager:
                         self.enemy_workers.append(unit.location.map_location())
                 else:
                     self.enemy_soldiers.append(unit.location.map_location())
-        except:
+        except Exception as exc:
+            print(exc)
             return None
 
     def explore(self):
         demands_count = 0
+        print(self.explorers)
         for ranger_id in self.explorers:
             try:
                 ranger = self.gc.unit(ranger_id)
                 self.exploration(ranger_id)
-            except:
+            except Exception as exc:
+                print(exc)
                 self.explorers.remove(ranger_id)
                 self.explorerQueue.append(Demands.EXPLORER)
                 demands_count += 1
@@ -302,20 +321,21 @@ class MilitaryManager:
             for i in range(0, 4 - demands_count + len(self.explorers)):
                 self.explorerQueue.append(Demands.EXPLORER)
 
-    def go_somewhere(self, unit_id):
+    def go_somewhere(self, unit_id, exploration=False):
         try:
             unit = self.gc.unit(unit_id)
-            d = random.choice(directions)
-            if self.gc.is_move_ready(unit_id) and self.gc.can_move(unit_id, d):
-                self.gc.move_robot(unit_id, d)
-                return True
+            if exploration:
+                self.soldiers_in_action[unit_id] = self.get_random_position(self.gc.planet(), None, None)
+            else:
+                d = random.choice(directions)
+                if self.gc.is_move_ready(unit.id) and self.gc.can_move(unit.id, d):
+                    self.gc.move_robot(unit.id, d)
+                    return True
             return False
-        except:
+        except Exception as exc:
+            print(exc)
             return False
 
-    # moving
-    # attacking
-    # planning
     def make_plans(self):
         print('Planning')
         while len(self.enemy_rockets) > 0:
@@ -328,8 +348,21 @@ class MilitaryManager:
     def check_rockets(self):
         for unit in self.gc.my_units():
             if unit.unit_type == bc.UnitType.Rocket and unit.id not in self.rockets_in_processing and unit.id not in self.loaded_rockets:
-                self.rockets_in_processing.append(unit.id)
-                self.new_action(ActionType.MOVE, unit.location.map_location(), -2)
+                if unit.rocket_is_used():
+                    garrison = unit.structure_garrison()
+                    max_unloads = 8
+                    act_unloads = 0
+                    while len(garrison) > 0:
+                        if act_unloads > max_unloads:
+                            break
+                        act_unloads += 1
+                        d = random.choice(directions)
+                        if self.gc.can_unload(unit.id, d):
+                            print('Unloaded a Ranger!')
+                            self.gc.unload(unit.id, d)
+                else:
+                    self.rockets_in_processing.append(unit.id)
+                    self.new_action(ActionType.MARS_HOLLIDAY, unit.location.map_location(), -2)
 
     def launch_rocket(self, rocket_id):
         self.gc.launch_rocket(rocket_id, self.get_next_rocket_destination())
@@ -343,10 +376,55 @@ class MilitaryManager:
             if mars_map.is_passable_terrain_at(map_loc):
                 return map_loc
 
+    def get_random_position(self, planet, location=None, radius=None) -> bc.MapLocation:
+        map = self.gc.starting_map(planet)  # type: bc.PlanetMap
+        min_x, min_y, max_x, max_y = self.get_random_parameters(location, radius, map)
+        if radius is not None:
+            max_tries = radius * 2
+        else:
+            max_tries = 20
+        act_tries = 0
+        print(min_x, min_y, max_x, max_y)
+        while True:
+            if max_tries < act_tries:
+                min_x, min_y, max_x, max_y = self.get_random_parameters(None, None, map)
+            x = random.randint(min_x, max_x)
+            y = random.randint(min_y, max_y)
+            map_loc = bc.MapLocation(planet, x, y)
+            act_tries += 1
+            if map.is_passable_terrain_at(map_loc):
+                print("x: ", x, "y: ", y, "location: ", location, "radius: ", radius)
+                return map_loc
+
+    def get_random_parameters(self, location, radius, map):
+        if location is not None and radius is not None:
+            if location.x + radius > map.width - 1:
+                max_x = map.width - 1
+            else:
+                max_x = location.x + radius
+            if location.y + radius > map.height - 1:
+                max_y = map.height - 1
+            else:
+                max_y = location.y + radius
+            if location.x - radius < 0:
+                min_x = 0
+            else:
+                min_x = location.x - radius
+            if location.y - radius < 0:
+                min_y = 0
+            else:
+                min_y = location.y - radius
+        else:
+            min_y = 0
+            min_x = 0
+            max_x = map.width - 1
+            max_y = map.height - 1
+        return min_x, min_y, max_x, max_y
+
     def attack_when_possible(self):
         for unit in self.gc.my_units():
             if (not self.gc.is_attack_ready(unit.id)
-                    or not unit.location.is_on_map()):
+                or not unit.location.is_on_map()):
                 continue
             nearby = self.gc.sense_nearby_units_by_team(
                 unit.location.map_location(),
@@ -361,10 +439,12 @@ class MilitaryManager:
     def remove_dead_soldiers(self):
         my_unit_ids = [u.id for u in self.gc.my_units()]
         for k, g in self.groups.items():
-            self.groups[k] = Group(g.id, {t: [x for x in v if x in my_unit_ids] for t, v in g.soldiers.items()}, g.action)
+            self.groups[k] = Group(g.id, {t: [x for x in v if x in my_unit_ids] for t, v in g.soldiers.items()},
+                                   g.action)
 
     def update(self):
         self.remove_dead_soldiers()
+        self.check_rockets()
         self.explore()
         self.distribute_soldiers()
         self.make_plans()
